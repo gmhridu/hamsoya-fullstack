@@ -102,7 +102,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-arp="">
+    <html lang="en" data-arp="" suppressHydrationWarning>
       <body
         className={`${playfairDisplay.variable} ${ptSans.variable} antialiased`}
       >
