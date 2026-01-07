@@ -5,6 +5,7 @@ import { TRPCReactProvider } from "@/trpc/client";
 import "./globals.css";
 import { SEO_DEFAULTS } from "@/lib/constants";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "sonner";
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
@@ -112,7 +113,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <TRPCReactProvider>{children}</TRPCReactProvider>
+          <TRPCReactProvider>
+            <Toaster/>
+            {children}
+          </TRPCReactProvider>
         </ThemeProvider>
       </body>
     </html>
