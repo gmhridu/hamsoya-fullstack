@@ -37,3 +37,38 @@ export const users = pgTable(
     uniqueIndex("idx_users_phone").on(table.phone_number),
   ]
 );
+
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    isRevoked: boolean("is_revoked").notNull().default(false),
+    familyId: uuid("family_id").defaultRandom(), // For token family to handle reuse
+  },
+  (table) => [
+    index("idx_refresh_tokens_user_id").on(table.userId),
+    index("idx_refresh_tokens_expires_at").on(table.expiresAt),
+  ]
+);
+
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    used: boolean("used").notNull().default(false),
+  },
+  (table) => [
+    index("idx_password_reset_tokens_user_id").on(table.userId),
+    index("idx_password_reset_tokens_expires_at").on(table.expiresAt),
+  ]
+);
+
+
