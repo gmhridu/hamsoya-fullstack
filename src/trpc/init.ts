@@ -7,7 +7,6 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { User } from "@/features/auth/interface/auth.interface";
-import { redis } from "@/lib/utils";
 
 interface Context {
   req: Request;
@@ -27,11 +26,17 @@ export const createTRPCContext = cache(async (opts: { req: Request }) => {
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7);
-     try {
-      const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as { userId: string };
+    try {
+      const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET!) as {
+        userId: string;
+      };
       userId = payload.userId;
 
-      const userResult = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      const userResult = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
       if (userResult.length) {
         const dbUser = userResult[0];
         user = {
@@ -68,6 +73,8 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
 export const redisProcedure = baseProcedure.use(({ ctx, next }) => {
+  const redis = new RedisService(process.env.REDIS_URL!);
+
   if (!redis) {
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",

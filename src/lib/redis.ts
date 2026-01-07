@@ -1,5 +1,10 @@
 import Redis, { type RedisOptions } from "ioredis";
 
+// Ensure this code only runs on the server side
+if (typeof window !== "undefined") {
+  throw new Error("ioredis is a server-side only module. Do not import it in client-side code.");
+}
+
 // Redis connection singleton
 let redis: Redis | null = null;
 let redisInitialized = false;
