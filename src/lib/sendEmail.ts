@@ -60,3 +60,40 @@ export const sendOTPVerificationEmail = async (
     html,
   });
 };
+
+export const sendPasswordResetEmail = async (
+  email: string,
+  name: string,
+  otp: string
+) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Password Reset - Hamsoya</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+        <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h1 style="color: #333; text-align: center; margin-bottom: 30px;">Password Reset Request</h1>
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">Hi ${name},</p>
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">We received a request to reset your password. Your reset code is:</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <span style="font-size: 24px; font-weight: bold; color: #ff9800; background-color: #fff3e0; padding: 15px 25px; border-radius: 5px; border: 2px dashed #ff9800;">${otp}</span>
+          </div>
+          <p style="color: #666; font-size: 16px; line-height: 1.5;">Please use this code to reset your password. This code will expire in 5 minutes.</p>
+          <p style="color: #999; font-size: 14px; margin-top: 30px;">If you didn't request this reset, please ignore this email.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+          <p style="color: #999; font-size: 14px; text-align: center;">Best regards,<br>Hamsoya Team</p>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendResendEmail({
+    to: email,
+    subject: "Password Reset Request - Hamsoya",
+    html,
+  });
+};
