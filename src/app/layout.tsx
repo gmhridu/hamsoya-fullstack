@@ -6,6 +6,7 @@ import "./globals.css";
 import { SEO_DEFAULTS } from "@/lib/constants";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
+import { AuthBootstrap } from "@/components/auth-bootstrap";
 
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair-display",
@@ -114,7 +115,8 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TRPCReactProvider>
-            <Toaster/>
+            <Toaster />
+            <AuthBootstrap />
             {children}
           </TRPCReactProvider>
         </ThemeProvider>

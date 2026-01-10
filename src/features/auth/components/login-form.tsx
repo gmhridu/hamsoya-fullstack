@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -35,7 +34,8 @@ import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { ProfileImageUpload } from "@/features/auth/components/profile-image-upload";
 import { Separator } from "@/components/ui/separator";
-import { useRegisterUser } from "@/features/auth/hooks/use-auth";
+import { useLogin, useRegisterUser } from "@/features/auth/hooks/use-auth";
+import { generateCSRFToken } from "@/lib/csrf";
 import { toast } from "sonner";
 import { useProfileImageStore } from "@/store/use-profile-image-store";
 
@@ -62,34 +62,31 @@ export const LoginForm = () => {
   const registerUser = useRegisterUser();
   const activeTab = useAuthStore((s) => s.activeTab);
   const setActiveTab = useAuthStore((s) => s.setActiveTab);
-
   const profileImageUrl = useAuthStore((s) => s.profileImageUrl);
   const profileImageField = useAuthStore((s) => s.profileImageField);
   const setProfileImage = useAuthStore((s) => s.setProfileImage);
   const resetProfileImage = useAuthStore((s) => s.resetProfileImage);
-
   const setImage = useProfileImageStore((s) => s.setImage);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [csrfToken, setCsrfToken] = useState("");
 
   useEffect(() => {
     if (profileImageUrl && profileImageField) {
       setImage(profileImageUrl, profileImageField);
     }
+    setCsrfToken(generateCSRFToken());
   }, [profileImageUrl, profileImageField, setImage]);
 
-  // Login form setup
+
   const loginForm = useForm<LoginSchemaInput>({
     resolver: zodResolver(LoginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-    mode: "onChange", // Real-time validation
+    defaultValues: { email: "", password: "" },
+    mode: "onChange",
   });
 
-  // Register form setup
+  // ── Register Form ────────────────────────────────────────────
   const registerForm = useForm<RegisterSchemaInput>({
     resolver: zodResolver(RegisterSchema),
     defaultValues: {
@@ -100,15 +97,34 @@ export const LoginForm = () => {
       phone_number: "",
       profile_image_url: "",
     },
-    mode: "onChange", // Real-time validation
+    mode: "onChange",
   });
 
-  // handle login form submission
+  const loginMutation = useLogin();
+
   const onLoginSubmit = (data: LoginSchemaInput) => {
-    console.log({ data });
+    const toastId = toast.loading("Signing in...", {
+      description: "Please wait while we authenticate you.",
+    });
+
+    loginMutation.mutate(data, {
+      onSuccess: () => {
+        toast.success("Login successful 🎉", {
+          id: toastId,
+          description: "You are now signed in.",
+        });
+        router.replace("/");
+      },
+      onError: (error: any) => {
+        toast.error("Login failed", {
+          id: toastId,
+          description:
+            error?.message ?? "Invalid email or password. Please try again.",
+        });
+      },
+    });
   };
 
-  // Handle register form submission
   const onRegisterSubmit = (data: RegisterSchemaInput) => {
     const toastId = toast.loading("Creating your account…", {
       description: "This will only take a moment.",
@@ -127,14 +143,13 @@ export const LoginForm = () => {
             id: toastId,
             description: "We’ve sent a verification code to your email.",
           });
-
           setProfileImage("", "");
           resetProfileImage();
           registerForm.reset();
-
-          router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+          router.replace(
+            `/verify-email?email=${encodeURIComponent(data.email)}`
+          );
         },
-
         onError: (error) => {
           toast.error("Registration failed", {
             id: toastId,
@@ -147,7 +162,7 @@ export const LoginForm = () => {
     );
   };
 
-  const isLoginPending = loginForm.formState.isSubmitting;
+  const isLoginPending = loginMutation.isPending;
   const isRegisterPending = registerUser.isPending;
 
   return (
@@ -170,6 +185,7 @@ export const LoginForm = () => {
           <CardHeader className="pb-4">
             <h2 className="text-2xl font-semibold text-center">Welcome</h2>
           </CardHeader>
+
           <CardContent className="pt-0">
             <TabsList className="grid w-full grid-cols-2 h-11">
               <TabsTrigger value="login" className="text-sm font-medium">
@@ -179,7 +195,7 @@ export const LoginForm = () => {
                 Sign Up
               </TabsTrigger>
             </TabsList>
-            {/* Login tab */}
+
             <TabsContent value="login" className="space-y-0 mt-6">
               <Form {...loginForm}>
                 <form
@@ -189,11 +205,9 @@ export const LoginForm = () => {
                   <FormField
                     control={loginForm.control}
                     name="email"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Email
-                        </FormLabel>
+                        <FormLabel>Email</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <MailIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -201,7 +215,12 @@ export const LoginForm = () => {
                               {...field}
                               type="email"
                               placeholder="Enter your email"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : "focus:border-primary/60 focus:ring-primary/20"
+                                }`}
                             />
                           </div>
                         </FormControl>
@@ -209,14 +228,13 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
                   <FormField
                     control={loginForm.control}
                     name="password"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Password
-                        </FormLabel>
+                        <FormLabel>Password</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <LockIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -224,18 +242,23 @@ export const LoginForm = () => {
                               {...field}
                               type={showPassword ? "text" : "password"}
                               placeholder="********"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : "focus:border-primary/60 focus:ring-primary/20"
+                                }`}
                             />
                             <button
                               type="button"
                               onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                               tabIndex={-1}
                             >
                               {showPassword ? (
-                                <EyeOffIcon className="size-4" />
+                                <EyeOffIcon size={16} />
                               ) : (
-                                <EyeIcon className="size-4" />
+                                <EyeIcon size={16} />
                               )}
                             </button>
                           </div>
@@ -244,6 +267,7 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
                   <Button
                     type="submit"
                     className="w-full h-11 text-base font-medium"
@@ -273,21 +297,20 @@ export const LoginForm = () => {
               </div>
             </TabsContent>
 
-            {/* Register Tab */}
+
             <TabsContent value="signup" className="space-y-0 mt-6">
               <Form {...registerForm}>
                 <form
                   className="space-y-6"
                   onSubmit={registerForm.handleSubmit(onRegisterSubmit)}
                 >
+                  {/* Name */}
                   <FormField
                     control={registerForm.control}
                     name="name"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Full Name
-                        </FormLabel>
+                        <FormLabel>Full Name</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <UserIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -295,7 +318,12 @@ export const LoginForm = () => {
                               {...field}
                               type="text"
                               placeholder="Enter your full name"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : ""
+                                }`}
                             />
                           </div>
                         </FormControl>
@@ -303,14 +331,14 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
+                  {/* Email */}
                   <FormField
                     control={registerForm.control}
                     name="email"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Email
-                        </FormLabel>
+                        <FormLabel>Email</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <MailIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -318,7 +346,12 @@ export const LoginForm = () => {
                               {...field}
                               type="email"
                               placeholder="Enter your email"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : ""
+                                }`}
                             />
                           </div>
                         </FormControl>
@@ -326,12 +359,14 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
+                  {/* Phone (optional) */}
                   <FormField
                     control={registerForm.control}
                     name="phone_number"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
+                        <FormLabel>
                           Phone Number{" "}
                           <span className="text-muted-foreground">
                             (Optional)
@@ -344,7 +379,12 @@ export const LoginForm = () => {
                               {...field}
                               type="tel"
                               placeholder="Enter your phone number"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : ""
+                                }`}
                             />
                           </div>
                         </FormControl>
@@ -352,10 +392,12 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
+                  {/* Profile Picture */}
                   <FormField
                     control={registerForm.control}
                     name="profile_image_url"
-                    render={() => (
+                    render={({ fieldState }) => (
                       <FormItem className="space-y-3">
                         <FormLabel>
                           Profile Picture{" "}
@@ -385,18 +427,22 @@ export const LoginForm = () => {
                             </p>
                           </div>
                         </FormControl>
-                        <FormMessage />
+                        {fieldState.error && (
+                          <p className="text-sm font-medium text-destructive">
+                            {fieldState.error.message}
+                          </p>
+                        )}
                       </FormItem>
                     )}
                   />
+
+                  {/* Password */}
                   <FormField
                     control={registerForm.control}
                     name="password"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Password
-                        </FormLabel>
+                        <FormLabel>Password</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <LockIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -404,18 +450,23 @@ export const LoginForm = () => {
                               {...field}
                               type={showPassword ? "text" : "password"}
                               placeholder="********"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : ""
+                                }`}
                             />
                             <button
                               type="button"
                               onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                               tabIndex={-1}
                             >
                               {showPassword ? (
-                                <EyeOffIcon className="size-4" />
+                                <EyeOffIcon size={16} />
                               ) : (
-                                <EyeIcon className="size-4" />
+                                <EyeIcon size={16} />
                               )}
                             </button>
                           </div>
@@ -424,14 +475,14 @@ export const LoginForm = () => {
                       </FormItem>
                     )}
                   />
+
+                  {/* Confirm Password */}
                   <FormField
                     control={registerForm.control}
                     name="confirmPassword"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem className="space-y-2">
-                        <FormLabel className="text-sm font-medium text-foreground">
-                          Confirm Password
-                        </FormLabel>
+                        <FormLabel>Confirm Password</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <LockIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -439,20 +490,25 @@ export const LoginForm = () => {
                               {...field}
                               type={showConfirmPassword ? "text" : "password"}
                               placeholder="********"
-                              className="pl-10 h-11 transition-colors focus:ring-2 focus:ring-primary/20"
+                              className={`pl-10 h-11 transition-all duration-200
+                                ${
+                                  fieldState.error
+                                    ? "border-red-500 focus:border-red-500 focus:ring-red-200"
+                                    : ""
+                                }`}
                             />
                             <button
                               type="button"
                               onClick={() =>
                                 setShowConfirmPassword(!showConfirmPassword)
                               }
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                               tabIndex={-1}
                             >
                               {showConfirmPassword ? (
-                                <EyeOffIcon className="size-4" />
+                                <EyeOffIcon size={16} />
                               ) : (
-                                <EyeIcon className="size-4" />
+                                <EyeIcon size={16} />
                               )}
                             </button>
                           </div>
@@ -464,7 +520,7 @@ export const LoginForm = () => {
 
                   <Button
                     type="submit"
-                    className="w-full h-11 text-base font-medium cursor-pointer"
+                    className="w-full h-11 text-base font-medium"
                     size="lg"
                     disabled={isRegisterPending}
                   >
@@ -479,6 +535,7 @@ export const LoginForm = () => {
                   </Button>
                 </form>
               </Form>
+
               <div className="mt-6">
                 <Separator className="my-4" />
                 <p className="text-xs text-center text-muted-foreground">
@@ -486,7 +543,6 @@ export const LoginForm = () => {
                   <Link
                     href="/terms"
                     className="text-primary hover:text-primary/80"
-                    prefetch
                   >
                     Terms of Service
                   </Link>{" "}
@@ -494,7 +550,6 @@ export const LoginForm = () => {
                   <Link
                     href="/privacy"
                     className="text-primary hover:text-primary/80"
-                    prefetch
                   >
                     Privacy Policy
                   </Link>
@@ -507,3 +562,4 @@ export const LoginForm = () => {
     </div>
   );
 };
+

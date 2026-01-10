@@ -1,5 +1,6 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { jwtDecode } from "jwt-decode";
 import { useTRPC } from "@/trpc/client";
 import { userStore, useUserActions } from "@/store/use-user-store";
 import type { User } from "@/features/auth/interface/auth.interface";
@@ -8,6 +9,10 @@ import type { User } from "@/features/auth/interface/auth.interface";
  * Access token is stored ONLY in memory for security
  * (never persisted to localStorage/sessionStorage)
  */
+interface JWT {
+  exp: number; // expiry in seconds
+}
+
 let accessToken: string | null = null;
 
 export const getAccessToken = () => accessToken;
@@ -65,8 +70,9 @@ export const useRefreshToken = () => {
       },
 
       onError: () => {
+        // Don't clear user on silent refresh failure
+        // This preserves Zustand persistence
         setAccessToken(null);
-        userStore.clearUser();
       },
     })
   );
@@ -74,7 +80,7 @@ export const useRefreshToken = () => {
 
 export const useGetMe = () => {
   const trpc = useTRPC();
-  const { setUser, clearUser } = useUserActions();
+  const { setUser } = useUserActions();
 
   const query = useQuery({
     ...trpc.auth.getMe.queryOptions(),
@@ -84,7 +90,7 @@ export const useGetMe = () => {
     refetchOnReconnect: true,
   });
 
-  const { data, isError } = query;
+  const { data } = query;
 
   useEffect(() => {
     if (data) {
@@ -92,12 +98,12 @@ export const useGetMe = () => {
     }
   }, [data, setUser]);
 
-  useEffect(() => {
-    if (isError) {
-      clearUser();
-      setAccessToken(null);
-    }
-  }, [isError, clearUser]);
+  // useEffect(() => {
+  //   if (isError) {
+  //     clearUser();
+  //     setAccessToken(null);
+  //   }
+  // }, [isError, clearUser]);
 
   return query;
 };
@@ -166,6 +172,47 @@ export const useVerifyOTP = () => {
   );
 };
 
+export const useVerifyForgetPasswordOTP = () => {
+  const trpc = useTRPC();
+  const { setError } = useUserActions();
+
+  return useMutation(
+    trpc.auth.verifyForgetPasswordOTP.mutationOptions({
+      onMutate: () => {
+        setError(null);
+      },
+      onError: (error: any) => {
+        setError(error.message ?? "Password reset OTP verification failed");
+      },
+    })
+  );
+};
+
+export const useCheckPasswordResetVerification = (email: string) => {
+  const trpc = useTRPC();
+
+  return useQuery({
+    ...trpc.auth.checkPasswordResetVerification.queryOptions({ email }),
+    enabled: !!email,
+  });
+};
+
+export const useResendPasswordResetOTP = () => {
+  const trpc = useTRPC();
+  const { setError } = useUserActions();
+
+  return useMutation(
+    trpc.auth.resendPasswordResetOTP.mutationOptions({
+      onMutate: () => {
+        setError(null);
+      },
+      onError: (error: any) => {
+        setError(error.message ?? "Resend password reset OTP failed");
+      },
+    })
+  );
+};
+
 export const useResendOTP = () => {
   const trpc = useTRPC();
   const { setError } = useUserActions();
@@ -182,16 +229,33 @@ export const useResendOTP = () => {
   );
 };
 
-export const useCooldownStatus = (email: string, options?: { enabled?: boolean }) => {
+export const useCooldownStatus = (
+  email: string,
+  options?: { enabled?: boolean }
+) => {
   const trpc = useTRPC();
 
   return useQuery({
     ...trpc.auth.getOTPCooldownStatus.queryOptions({ email }),
     ...options,
   });
-}
+};
+
+export const usePasswordResetCooldownStatus = (
+  email: string,
+  options?: { enabled?: boolean }
+) => {
+  const trpc = useTRPC();
+
+  return useQuery({
+    ...trpc.auth.getPasswordResetCooldownStatus.queryOptions({ email }),
+    ...options,
+  });
+};
 
 export const useAuth = () => {
+  const queryClient = useQueryClient();
+
   const login = useLogin();
   const logout = useLogout();
   const refresh = useRefreshToken();
@@ -201,12 +265,88 @@ export const useAuth = () => {
   const register = useRegisterUser();
   const verifyOTP = useVerifyOTP();
   const resendOTP = useResendOTP();
-  const cooldownStatus = useCooldownStatus(userStore.getState().user?.email || '');
-
+  const verifyForgetPasswordOTP = useVerifyForgetPasswordOTP();
+  const resendPasswordResetOTP = useResendPasswordResetOTP();
+  const cooldownStatus = useCooldownStatus(
+    userStore.getState().user?.email || ""
+  );
 
   const clearError = useCallback(() => {
     userStore.clearError();
   }, []);
+
+  /**
+   * Silent refresh using setTimeout
+   */
+
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const scheduleTokenRefresh = useCallback(() => {
+    const token = getAccessToken();
+    if (!token) return;
+
+    try {
+      const decoded: JWT = jwtDecode(token);
+      const now = Math.floor(Date.now() / 1000);
+      const expiresIn = decoded.exp - now;
+
+      // Refresh 60 seconds before expiry
+      const refreshInMs = (expiresIn - 60) * 1000;
+
+      if (refreshInMs <= 0) {
+        // If token already near expiry, refresh immediately
+        refresh
+          .mutateAsync()
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ["auth.getMe"] });
+            scheduleTokenRefresh(); // schedule next refresh
+          })
+          .catch(() => {
+            // Don't clear user on silent refresh failure
+            // This preserves Zustand persistence
+            setAccessToken(null);
+          });
+      } else {
+        // Schedule a refresh in the future
+        if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+
+        refreshTimeoutRef.current = setTimeout(async () => {
+          try {
+            await refresh.mutateAsync();
+            queryClient.invalidateQueries({ queryKey: ["auth.getMe"] });
+            scheduleTokenRefresh(); // schedule next refresh
+          } catch {
+            // Don't clear user on silent refresh failure
+            // This preserves Zustand persistence
+            setAccessToken(null);
+          }
+        }, refreshInMs);
+      }
+    } catch {
+      // Invalid token, clear
+      setAccessToken(null);
+      userStore.clearUser();
+    }
+  }, [refresh, queryClient]);
+
+  // Initialize silent refresh when accessToken changes
+  useEffect(() => {
+    if (getAccessToken()) {
+      scheduleTokenRefresh();
+    }
+
+    return () => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
+  }, [scheduleTokenRefresh]);
+
+  // Invalidate getMe on login
+  useEffect(() => {
+    if (login.isSuccess) {
+      queryClient.invalidateQueries({ queryKey: ["auth.getMe"] });
+      scheduleTokenRefresh();
+    }
+  }, [login.isSuccess, queryClient, scheduleTokenRefresh]);
 
   return {
     login,
@@ -218,6 +358,8 @@ export const useAuth = () => {
     register,
     verifyOTP,
     resendOTP,
+    verifyForgetPasswordOTP,
+    resendPasswordResetOTP,
     cooldownStatus,
     clearError,
   };

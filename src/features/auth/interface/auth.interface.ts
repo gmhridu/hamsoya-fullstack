@@ -96,7 +96,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: "USER" | "SELLER" | "ADMIN" | null; 
+  role: "USER" | "SELLER" | "ADMIN" | null;
   phone_number: string | null;
   profile_image_url: string | null;
   is_verified: boolean;
@@ -109,6 +109,7 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  hydrated: boolean;
 }
 
 export interface AuthActions {
@@ -120,9 +121,12 @@ export interface AuthActions {
   login: (user: User) => void;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => void;
+  setHydrated: (value: boolean) => void;
 }
 
-export interface AuthStore extends AuthState, AuthActions {}
+export interface AuthStore extends AuthState, AuthActions {
+  isInitiallyGuest: boolean;
+}
 
 export interface LoginCredentials {
   email: string;

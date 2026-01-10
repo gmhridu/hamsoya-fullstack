@@ -1,20 +1,25 @@
 import bcrypt from "bcrypt";
-import crypto from "crypto";
+import crypto, { createHash } from "crypto";
 import jwt from "jsonwebtoken";
 import { db } from "@/db";
 import { refreshTokens, passwordResetTokens, users } from "@/db/schema";
 import { eq, and, lt } from "drizzle-orm";
+import { getServerUser } from "@/lib/server-auth";
+import { redirect } from "next/navigation";
 
-export const JWT_SECRET = process.env.JWT_SECRET!;
-export const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || JWT_SECRET;
+export const JWT_SECRET = process.env.JWT_ACCESS_SECRET!;
+export const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET! || JWT_SECRET;
 export const ACCESS_TOKEN_EXPIRY = "15m"; // 15 minutes
-export const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+export const REFRESH_TOKEN_EXPIRY = 30 * 24 * 60 * 60; // 30 days in seconds
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  hash: string
+): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
 
@@ -23,9 +28,9 @@ export function generateToken(): string {
 }
 
 export async function hashToken(token: string): Promise<string> {
-  return bcrypt.hash(token, 10);
+  return createHash("sha256").update(token).digest("hex");
+  // or "sha512" if you want to be extra sure
 }
-
 export function generateAccessToken(payload: { userId: string }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
 }
@@ -42,7 +47,10 @@ export function verifyAccessToken(token: string): { userId: string } | null {
   }
 }
 
-export async function verifyRefreshToken(token: string, userId: string): Promise<boolean> {
+export async function verifyRefreshToken(
+  token: string,
+  userId: string
+): Promise<boolean> {
   const tokenHash = await hashToken(token);
   const result = await db
     .select()
@@ -60,7 +68,11 @@ export async function verifyRefreshToken(token: string, userId: string): Promise
   return result.length > 0;
 }
 
-export async function storeRefreshToken(userId: string, token: string, familyId?: string | null): Promise<void> {
+export async function storeRefreshToken(
+  userId: string,
+  token: string,
+  familyId?: string | null
+): Promise<void> {
   const tokenHash = await hashToken(token);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY);
 
@@ -72,12 +84,20 @@ export async function storeRefreshToken(userId: string, token: string, familyId?
   });
 }
 
-export async function revokeRefreshTokens(userId: string, familyId?: string | null): Promise<void> {
+export async function revokeRefreshTokens(
+  userId: string,
+  familyId?: string | null
+): Promise<void> {
   if (familyId) {
     await db
       .update(refreshTokens)
       .set({ isRevoked: true })
-      .where(and(eq(refreshTokens.userId, userId), eq(refreshTokens.familyId, familyId)));
+      .where(
+        and(
+          eq(refreshTokens.userId, userId),
+          eq(refreshTokens.familyId, familyId)
+        )
+      );
   } else {
     await db
       .update(refreshTokens)
@@ -86,7 +106,10 @@ export async function revokeRefreshTokens(userId: string, familyId?: string | nu
   }
 }
 
-export async function storePasswordResetToken(userId: string, token: string): Promise<void> {
+export async function storePasswordResetToken(
+  userId: string,
+  token: string
+): Promise<void> {
   const tokenHash = await hashToken(token);
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
@@ -97,7 +120,10 @@ export async function storePasswordResetToken(userId: string, token: string): Pr
   });
 }
 
-export async function verifyPasswordResetToken(token: string, userId: string): Promise<boolean> {
+export async function verifyPasswordResetToken(
+  token: string,
+  userId: string
+): Promise<boolean> {
   const tokenHash = await hashToken(token);
   const result = await db
     .select()
@@ -123,10 +149,33 @@ export async function verifyPasswordResetToken(token: string, userId: string): P
   return false;
 }
 
-export async function updatePassword(userId: string, newPassword: string): Promise<void> {
+export async function updatePassword(
+  userId: string,
+  newPassword: string
+): Promise<void> {
   const passwordHash = await hashPassword(newPassword);
   await db
     .update(users)
     .set({ password_hash: passwordHash, updated_at: new Date() })
     .where(eq(users.id, userId));
+}
+
+export async function requiredAuth() {
+  const user = await getServerUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return user;
+}
+
+export async function requiredUnauth() {
+  const user = await getServerUser();
+
+  if (user) {
+    redirect("/");
+  }
+
+  return null;
 }

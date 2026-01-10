@@ -4,7 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Heart,
   LogIn,
@@ -38,22 +38,38 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { BRAND_NAME, NAVIGATION_ITEMS } from "@/lib/constants";
-
-const displayUser = {
-  role: "USER",
-  name: "John Doe",
-  email: "john@example.com",
-};
+import {
+  useHydrated,
+  useIsAuthenticated,
+  useUser,
+} from "@/store/use-user-store";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/features/auth/hooks/use-auth";
+import { toast } from "sonner";
 
 export const Navbar = () => {
+  const router = useRouter();
   const pathname = usePathname();
-  const isAuthenticated = false;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const displayUser = useUser();
+  const isAuthenticated = useIsAuthenticated();
+  const hydrated = useHydrated();
+  const { logout } = useAuth();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Search:", searchQuery);
+  };
+
+  const handleLogout = () => {
+    logout.mutate(undefined, {
+      onSuccess: () => {
+        router.push("/");
+        toast.success("Logged out successfully");
+        setMobileMenuOpen(false);
+      },
+    });
   };
 
   return (
@@ -150,31 +166,50 @@ export const Navbar = () => {
             <div className="hidden md:block">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild className="cursor-pointer">
-                  {isAuthenticated ? (
+                  {hydrated ? (
+                    // Hydration done → show correct state
+                    isAuthenticated && displayUser ? (
+                      <Button
+                        variant="ghost"
+                        className="relative size-9 rounded-full p-0 hover:bg-primary/10"
+                      >
+                        <Avatar className="size-8">
+                          <AvatarImage
+                            src={displayUser.profile_image_url ?? undefined}
+                            alt={displayUser.name ?? "User"}
+                          />
+                          <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
+                            {displayUser.name
+                              ?.split(" ")
+                              .map((n) => n[0])
+                              .join("") || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-9 hover:bg-primary/10"
+                      >
+                        <User className="size-5" />
+                      </Button>
+                    )
+                  ) : (
+                    // Still hydrating → always show skeleton (brief flash is acceptable)
                     <Button
                       variant="ghost"
-                      className="relative h-9 w-9 rounded-full hover:bg-primary/10"
+                      className="relative size-9 rounded-full p-0 hover:bg-primary/10"
                     >
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src="/avatar.png" alt={displayUser.name} />
+                      <Avatar className="size-8">
                         <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
-                          {displayUser.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
+                          <Skeleton className="size-full rounded-full" />
                         </AvatarFallback>
                       </Avatar>
                     </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="hover:bg-primary/10"
-                    >
-                      <User className="size-5" />
-                    </Button>
                   )}
                 </DropdownMenuTrigger>
+
                 <DropdownMenuContent
                   align="end"
                   className="w-64 shadow-lg border-border/50 bg-background/95 backdrop-blur-sm"
@@ -184,16 +219,16 @@ export const Navbar = () => {
                       <DropdownMenuLabel className="font-normal">
                         <div className="flex flex-col space-y-1 px-1 py-1">
                           <p className="text-sm font-medium leading-none text-foreground">
-                            {displayUser.name}
+                            {displayUser?.name}
                           </p>
                           <p className="text-xs leading-none text-muted-foreground">
-                            {displayUser.email}
+                            {displayUser?.email}
                           </p>
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
 
-                      {displayUser.role === "ADMIN" && (
+                      {displayUser?.role === "ADMIN" && (
                         <DropdownMenuItem className="cursor-pointer">
                           <Shield className="mr-2 size-4" />
                           <span>Admin Dashboard</span>
@@ -219,7 +254,7 @@ export const Navbar = () => {
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        onClick={() => console.log("Logout")}
+                        onClick={handleLogout}
                         className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700 dark:focus:bg-red-950/20"
                       >
                         <LogOut className="mr-2 h-4 w-4" />
@@ -308,11 +343,11 @@ export const Navbar = () => {
                         <div className="flex items-center space-x-3">
                           <Avatar className="h-12 w-12 ring-2 ring-primary/10">
                             <AvatarImage
-                              src="/avatar.png"
-                              alt={displayUser.name}
+                              src={displayUser?.profile_image_url ?? undefined}
+                              alt={displayUser?.name ?? "User"}
                             />
                             <AvatarFallback className="bg-primary text-primary-foreground text-base">
-                              {displayUser.name
+                              {displayUser?.name
                                 .split(" ")
                                 .map((n) => n[0])
                                 .join("")}
@@ -320,10 +355,10 @@ export const Navbar = () => {
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold truncate">
-                              {displayUser.name}
+                              {displayUser?.name}
                             </p>
                             <p className="text-xs truncate text-muted-foreground">
-                              {displayUser.email}
+                              {displayUser?.email}
                             </p>
                           </div>
                         </div>
@@ -353,7 +388,7 @@ export const Navbar = () => {
                     <div className="p-4 space-y-1 border-t">
                       {isAuthenticated ? (
                         <>
-                          {displayUser.role === "ADMIN" && (
+                          {displayUser?.role === "ADMIN" && (
                             <button
                               onClick={() => {
                                 setMobileMenuOpen(false);
@@ -426,10 +461,7 @@ export const Navbar = () => {
 
                     {isAuthenticated && (
                       <Button
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          console.log("Logout");
-                        }}
+                        onClick={handleLogout}
                         variant="outline"
                         className="w-full justify-start text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-red-950 dark:hover:bg-red-950/20"
                       >

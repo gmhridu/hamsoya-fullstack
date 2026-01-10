@@ -312,7 +312,7 @@ export class RedisService {
   async setPasswordResetVerified(email: string): Promise<void> {
     if (!this.redis) return;
     const key = RedisKeys.passwordResetVerified(email);
-    await this.redis.setex(key, 600, "1"); // 10 minutes to complete password reset
+    await this.redis.setex(key, 1800, "1"); // 30 minutes to complete password reset
   }
 
   async checkPasswordResetVerified(email: string): Promise<boolean> {
